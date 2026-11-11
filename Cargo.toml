@@ -1,0 +1,25 @@
+[package]
+name = "voice-relay"
+version = "0.1.0"
+edition = "2021"
+description = "Relays live calls to digital radios: an MMDVM-compatible network master that hotspots and repeaters log into, with a roster of talkgroups they pick from. Carries them as DMR today."
+license = "GPL-3.0-or-later"
+authors = ["Taclane"]
+repository = "https://github.com/taclane/trunk-plugin-voice-relay"
+homepage = "https://github.com/taclane/trunk-plugin-voice-relay"
+publish = false
+
+[dependencies]
+# The recorder's SDK and its decoders / FEC, from one commit of the recorder (both from the
+# same tree: trunk-core uses the SDK's frame types).
+trunk-recorder-plugin = { git = "https://github.com/TrunkRecorder/trunk-recorder-pro", rev = "f0734e332527" }
+trunk-core = { git = "https://github.com/TrunkRecorder/trunk-recorder-pro", rev = "f0734e332527" }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tiny_http = "0.12"
+
+[profile.release]
+strip = true
+lto = true

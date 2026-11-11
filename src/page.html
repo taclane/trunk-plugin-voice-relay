@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Relay</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --muted: #677085; --line: #e2e5eb;
+  --accent: #2f6fdb; --accent-ink: #ffffff; --live: #1f9d55; --warn: #c2410c; --chip: #eef2f9;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #11141a; --panel: #1a1f28; --ink: #e6e9ef; --muted: #8b93a7; --line: #2a3140;
+    --accent: #5b8ff0; --accent-ink: #0d1117; --live: #3ccf7f; --warn: #f0883e; --chip: #232a36; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 18px; margin: 0; }
+header .meta { color: var(--muted); }
+main { padding: 16px; display: grid; gap: 16px; max-width: 1400px; margin: 0 auto; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; min-width: 0; }
+h2 { font-size: 15px; margin: 0 0 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+h2 .sub { color: var(--muted); font-weight: normal; font-size: 13px; }
+.peers { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+.peer { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+.peer.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.peer .top { display: flex; justify-content: space-between; gap: 8px; }
+.peer .call { font-weight: 600; font-size: 15px; }
+.peer .info { color: var(--muted); font-size: 12px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+.dot.on { background: var(--live); }
+.slots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.slot { background: var(--bg); border-radius: 6px; padding: 8px; min-height: 70px; }
+.slot .name { font-size: 12px; color: var(--muted); font-weight: 600; }
+.onair { color: var(--live); font-weight: 600; margin: 2px 0 4px; word-break: break-word; }
+.idle { color: var(--muted); margin: 2px 0 4px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { background: var(--chip); border-radius: 10px; padding: 1px 8px; font-size: 12px; white-space: nowrap; }
+.chip.opt { border: 1px dashed var(--muted); background: transparent; }
+.chip.dyn { background: var(--accent); color: var(--accent-ink); }
+.chip button { border: 0; background: none; color: inherit; cursor: pointer; padding: 0 0 0 4px; font-size: 12px; }
+.tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+input[type=search] { flex: 1 1 200px; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+label { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+td.n { font-variant-numeric: tabular-nums; }
+tr.live td { color: var(--live); }
+tr.emerg td { color: var(--warn); font-weight: 600; }
+.ts { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 5px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
+.ts.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.ts:disabled { opacity: .35; cursor: default; }
+.muted { color: var(--muted); }
+.grid2 { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+.log { font-size: 12px; color: var(--muted); max-height: 260px; overflow-y: auto; }
+.log div { padding: 2px 0; border-bottom: 1px solid var(--line); }
+a { color: var(--accent); }
+code { background: var(--chip); padding: 0 4px; border-radius: 4px; font-size: 12px; }
+summary { cursor: pointer; }
+@media (max-width: 520px) {
+  .peers { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; } main { padding: 12px 16px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Voice Relay</h1>
+  <span class="meta" id="meta"></span>
+  <span class="meta" style="margin-left:auto"><label title="What the hotspot puts before a network talkgroup on RF (often 9 on a custom network), so the radio's contacts match what it hears">RF prefix <input id="prefix" size="2" inputmode="numeric" style="width:3em"></label>
+    <a id="csv" href="/contacts.csv">Contacts CSV</a></span>
+</header>
+<main>
+  <section>
+    <details id="connect"><summary><b>Connect a hotspot</b> <span class="muted">— any MMDVM hotspot or repeater</span></summary>
+      <div class="muted" style="margin-top:8px">Give the hotspot a DMR network whose master is this relay:</div>
+      <table style="margin:6px 0 8px; width:auto"><tbody id="connectRows"></tbody></table>
+      <div class="muted">Some hotspots put a digit before a custom network's talkgroups on RF (with a <b>9</b>, 108703 is heard and keyed as 9108703): set <b>RF prefix</b> above to it before downloading the contacts.
+        For talker aliases, the hotspot's "embedded LC only" option must be off.
+        Then add talkgroups to its slots here, put <code>TS1=…;TS2=…</code> in its options, or key a talkgroup from a radio (4000 drops it). A simplex hotspot carries TS2 only.
+        Nothing is ever sent from a radio to the systems: a key-up only picks what the slot plays.</div>
+    </details>
+  </section>
+  <section>
+    <h2>Peers <span class="sub">Pick one, then add talkgroups to its slots below.</span></h2>
+    <div class="peers" id="peers"></div>
+  </section>
+  <div class="grid2">
+    <section>
+      <h2>On the air <span class="sub" id="activeCount"></span></h2>
+      <div class="scroll"><table id="active"></table></div>
+    </section>
+    <section>
+      <h2>Last heard</h2>
+      <div class="scroll"><table id="recent"></table></div>
+    </section>
+  </div>
+  <section>
+    <h2>Groups <span class="sub">A slot on a group plays any of its talkgroups, one transmission at a time: first-listed first.</span></h2>
+    <div class="scroll"><table id="groups"></table></div>
+    <div class="tools" style="margin-top:8px">
+      <input id="gName" placeholder="New group's name" style="flex:1 1 160px;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)">
+      <input id="gId" placeholder="Its talkgroup ID" inputmode="numeric" style="width:9em;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)">
+      <label><input type="checkbox" id="gKeep"> calls keep their own IDs</label>
+      <button class="ts" id="gMake">Make group</button>
+      <span class="muted" id="gErr"></span>
+    </div>
+  </section>
+  <section>
+    <h2>Systems <span class="sub">A system's talkgroup N goes out as DMR talkgroup base + N. A change restarts the relay (hotspots log back in by themselves).</span></h2>
+    <div class="scroll"><table id="systems"></table></div>
+    <span class="muted" id="sErr"></span>
+  </section>
+  <section>
+    <h2>Talkgroups <span class="sub" id="tgFor"></span></h2>
+    <div class="tools">
+      <input type="search" id="q" placeholder="Filter by name, number or system">
+      <label><input type="checkbox" id="playable" checked> DMR-capable only</label>
+      <label><input type="checkbox" id="mine"> On this peer only</label>
+    </div>
+    <div class="scroll"><table id="tgs"></table></div>
+  </section>
+  <section>
+    <h2>Log</h2>
+    <div class="log" id="log"></div>
+  </section>
+</main>
+<script>
+let S = null, sel = null, editing = null, sysDirty = false;
+try { sel = Number(localStorage.getItem('peer')) || null; } catch (e) {}
+try { document.getElementById('prefix').value = localStorage.getItem('prefix') || ''; } catch (e) {}
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ago = t => { if (!t) return ''; const s = Math.max(0, Date.now() / 1000 - t);
+  return s < 60 ? Math.round(s) + ' s' : s < 3600 ? Math.round(s / 60) + ' min' : s < 86400 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' d'; };
+const dur = (a, b) => { const s = Math.max(0, (b || Date.now() / 1000) - a); return s < 60 ? s.toFixed(0) + ' s' : (s / 60).toFixed(1) + ' min'; };
+const mhz = hz => hz ? (hz / 1e6).toFixed(4) + ' MHz' : '';
+const tgName = dmr => { const g = S && (S.groups || []).find(g => g.id === dmr); if (g) return g.name;
+  const t = S && S.talkgroups.find(t => t.dmr === dmr); return t ? (t.tag || (t.system + ' ' + t.tg)) : ''; };
+const groupOf = id => (S.groups || []).find(g => g.id === id);
+
+async function post(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (r.ok) { S = await r.json(); draw(); return ''; }
+  return await r.text();
+}
+function peerOf(id) { return S.peers.find(p => p.id === id); }
+function subsOf(peer, slot) { const s = peer && peer.slots.find(s => s.slot === slot); return s ? s.statics : []; }
+
+function drawPeers() {
+  if (!S.peers.length) { $('peers').innerHTML = `<div class="muted">No peers yet. Point a hotspot's DMR network at ${esc(S.master)} with this relay's password.</div>`; return; }
+  if (!peerOf(sel)) sel = S.peers[0].id;
+  $('peers').innerHTML = S.peers.map(p => {
+    const slots = p.slots.map(s => {
+      const pl = s.playing;
+      const via = pl && pl.sentAs !== pl.dmrTg ? ` <span class="muted">as ${esc(pl.sentAs)}</span>` : '';
+      const air = pl ? `<div class="onair">▶ ${esc(pl.dmrTg)} ${esc(pl.tgTag)}${via}<br><span>${esc(pl.unitName || pl.unit)}</span>${pl.live ? '' : ' <span class="muted">(replay)</span>'}</div>` : '<div class="idle">idle</div>';
+      const chips = s.statics.map(t => `<span class="chip" title="${esc(tgName(t))}">${groupOf(t) ? esc(groupOf(t).name) : t}<button data-rm="${p.id},${s.slot},${t}" title="Remove">×</button></span>`)
+        .concat(s.options.map(t => `<span class="chip opt" title="From the hotspot's options">${t}</span>`))
+        .concat(s.dynamic ? [`<span class="chip dyn" title="Keyed from a radio; lapses in ${Math.round(s.dynamicLeftS / 60)} min">${s.dynamic}<button data-dyn="${p.id},${s.slot}" title="Drop">×</button></span>`] : []);
+      return `<div class="slot"><div class="name">TS${s.slot}</div>${air}<div class="chips">${chips.join('') || '<span class="muted">no talkgroups</span>'}</div></div>`;
+    }).join('');
+    const info = p.online ? [p.location, mhz(p.txHz), p.software && (p.software + (p.package ? ' / ' + p.package : '')), 'CC' + p.colorCode].filter(Boolean).map(esc).join(' · ') : 'not logged in';
+    return `<div class="peer ${p.id === sel ? 'sel' : ''}" data-peer="${p.id}">
+      <div class="top"><span class="call"><span class="dot ${p.online ? 'on' : ''}"></span>${esc(p.callsign || p.id)}</span><span class="muted">${p.id}</span></div>
+      <div class="info">${info}</div><div class="slots">${slots}</div></div>`;
+  }).join('');
+}
+
+function drawCalls() {
+  const air = new Map(); (S.onAir || []).forEach(o => { const k = o.dmrTg; air.set(k, (air.get(k) || []).concat('TS' + o.slot + '@' + o.peer)); });
+  const row = (c, live) => `<tr class="${c.emergency ? 'emerg' : live && air.has(c.dmr) ? 'live' : ''}">
+    <td class="n">${c.dmr}</td><td>${esc(c.tag || c.system + ' ' + c.tg)}</td><td>${esc(c.unitName || c.unit || '')}</td>
+    <td>${esc(c.voice)}${c.encrypted ? ' 🔒' : ''}${!c.playable ? ' <span class="muted">(not carried)</span>' : ''}</td>
+    <td class="n">${live ? dur(c.start) : ago(c.end)}</td><td>${live ? esc((air.get(c.dmr) || []).join(' ')) : ''}</td></tr>`;
+  const head = l => `<tr><th>TG</th><th>Name</th><th>Talker</th><th>Voice</th><th>${l}</th><th></th></tr>`;
+  $('active').innerHTML = head('For') + (S.active.length ? S.active.map(c => row(c, true)).join('') : '<tr><td colspan="6" class="muted">Quiet</td></tr>');
+  $('recent').innerHTML = head('Ago') + S.recent.map(c => row(c, false)).join('');
+  $('activeCount').textContent = S.active.length ? S.active.length + ' call(s)' : '';
+}
+
+function drawGroups() {
+  const p = peerOf(sel), slots = p ? p.slots.map(s => s.slot) : [];
+  const s1 = subsOf(p, 1), s2 = subsOf(p, 2);
+  const btn = (slot, g, list) => `<button class="ts ${list.includes(g.id) ? 'on' : ''}" ${!p || !slots.includes(slot) ? 'disabled' : ''} data-sub="${slot},${g.id},${list.includes(g.id) ? 0 : 1}">TS${slot}</button>`;
+  const sysOnly = new Set(S.talkgroups.map(t => t.system)).size < 2;
+  const member = m => m.talkgroups.length
+    ? m.talkgroups.map(e => { const t = S.talkgroups.find(t => t.system === m.system && String(t.tg) === e.trim());
+        return `<span class="chip">${esc((t && t.tag) || ((m.system && !sysOnly ? m.system + ' ' : '') + e))}</span>`; }).join(' ')
+    : 'all of ' + esc(m.system || 'every system');
+  const what = g => g.all ? 'every call' : g.members.map(member).join(' ') || '<span class="muted">empty: pick its talkgroups below</span>';
+  $('groups').innerHTML = '<tr><th>DMR TG</th><th>Name</th><th>Plays</th><th>Goes out as</th><th></th><th></th></tr>' + (S.groups || []).map(g => `<tr>
+    <td class="n">${g.id}</td><td>${esc(g.name)}</td><td style="white-space:normal">${what(g)}</td>
+    <td>${g.keepIds ? 'each talkgroup' : 'this group'}</td><td>${btn(1, g, s1)} ${btn(2, g, s2)}</td>
+    <td>${g.builtin ? '<span class="muted">built in</span>' : `<button class="ts ${editing === g.id ? 'on' : ''}" data-edit="${g.id}">${editing === g.id ? 'Done' : 'Pick talkgroups'}</button> <button class="ts" data-gdel="${g.id}">Remove</button>`}</td></tr>`).join('');
+  if (!$('gId').value) { let n = 900001; while ((S.groups || []).some(g => g.id === n)) n++; $('gId').placeholder = 'Its talkgroup ID (' + n + ')'; $('gId').dataset.next = n; }
+}
+
+function tgMatch(e, tg) {
+  e = e.trim(); const r = e.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (r) return tg >= +r[1] && tg <= +r[2];
+  if (/[*?]/.test(e)) return new RegExp('^' + e.replace(/\*/g, '\\d*').replace(/\?/g, '\\d') + '$').test(String(tg));
+  return e === String(tg);
+}
+// In group g: 'named' (by its own number, so it can be taken out here), 'covered' (by a range, a pattern or a whole system), or ''.
+function inGroup(g, t) {
+  let how = '';
+  for (const m of g.members) {
+    if (m.system && m.system !== t.system) continue;
+    if (!m.talkgroups.length) { how = how || 'covered'; continue; }
+    for (const e of m.talkgroups) if (tgMatch(e, t.tg)) { if (m.system === t.system && e.trim() === String(t.tg)) return 'named'; how = 'covered'; }
+  }
+  return how;
+}
+
+function drawTgs() {
+  const p = peerOf(sel), q = $('q').value.trim().toLowerCase();
+  const slots = p ? p.slots.map(s => s.slot) : [];
+  const s1 = subsOf(p, 1), s2 = subsOf(p, 2);
+  const eg = editing && groupOf(editing);
+  $('tgFor').textContent = eg ? 'Picking for group ' + eg.name : p ? 'Slots of ' + (p.callsign || p.id) : '';
+  const rows = S.talkgroups.filter(t => (!$('playable').checked || t.playable)
+      && (!$('mine').checked || s1.includes(t.dmr) || s2.includes(t.dmr))
+      && (!q || (t.tag + ' ' + t.dmr + ' ' + t.tg + ' ' + t.system).toLowerCase().includes(q)));
+  const btn = (slot, t, list) => eg ? '' : `<button class="ts ${list.includes(t.dmr) ? 'on' : ''}" ${!p || !slots.includes(slot) ? 'disabled' : ''} data-sub="${slot},${t.dmr},${list.includes(t.dmr) ? 0 : 1}">TS${slot}</button>`;
+  const gbtn = t => { if (!eg) return ''; const how = inGroup(eg, t);
+    return how === 'covered' ? '<span class="muted">in it (by a range or system)</span>'
+      : `<button class="ts ${how ? 'on' : ''}" data-member="${esc(t.system)},${t.tg},${how ? 0 : 1}">${how ? 'In group' : 'Add'}</button>`; };
+  $('tgs').innerHTML = '<tr><th>DMR TG</th><th>Name</th><th>System</th><th>Voice</th><th>Last heard</th><th>Calls</th><th></th></tr>'
+    + rows.slice(0, 400).map(t => `<tr><td class="n">${t.dmr}</td><td>${esc(t.tag)}</td><td>${esc(t.system)} ${t.tg}</td><td>${esc(t.voice)}${t.playable ? '' : ' <span class="muted">(not carried)</span>'}</td>
+      <td class="n">${ago(t.last)}</td><td class="n">${t.calls}</td><td>${btn(1, t, s1)} ${btn(2, t, s2)}${gbtn(t)}</td></tr>`).join('')
+    + (rows.length > 400 ? `<tr><td colspan="7" class="muted">${rows.length - 400} more: filter to find them</td></tr>` : '');
+}
+
+function drawSystems() {
+  if (sysDirty) return;
+  $('systems').innerHTML = '<tr><th>System</th><th>Kind</th><th>Relayed</th><th>Talkgroup base</th><th></th></tr>' + (S.systems || []).map(s => `<tr>
+    <td>${esc(s.system)}</td><td>${esc(s.kind)}</td>
+    <td><label><input type="checkbox" data-relay="${esc(s.system)}" ${s.skip ? '' : 'checked'}> relayed</label></td>
+    <td><input data-base="${esc(s.system)}" inputmode="numeric" size="9" placeholder="${s.byPlace}" value="${s.tgBase ?? ''}" style="width:8em"></td>
+    <td><button class="ts" data-sysave="${esc(s.system)}">Save</button></td></tr>`).join('');
+}
+
+function drawConnect() {
+  const [h, port] = [location.hostname, (S.master.split(':').pop() || '62031')];
+  const rows = [['Address', h], ['Port', port], ['Password', 'the relay\'s password (its settings)'], ['Options', 'optional: TS1=…;TS2=…'], ['Colour code', 'any: the hotspot uses its own']];
+  $('connectRows').innerHTML = rows.map(([k, v]) => `<tr><th>${k}</th><td><code>${esc(v)}</code></td></tr>`).join('');
+}
+
+function draw() {
+  drawConnect();
+  $('meta').textContent = `master ${S.master} · calls play ${S.mode} · ${S.talkgroups.length} talkgroups · ${S.units} radios`;
+  drawPeers(); drawCalls(); drawGroups(); drawSystems(); drawTgs();
+  $('prefix').placeholder = S.rfPrefix || '';
+  const pre = ($('prefix').value || S.rfPrefix || '').replace(/\D/g, '');
+  $('csv').href = '/contacts.csv' + (pre ? '?prefix=' + pre : '');
+  $('log').innerHTML = S.log.map(([t, s]) => `<div>${new Date(t * 1000).toLocaleTimeString()} — ${esc(s)}</div>`).join('');
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (b && b.dataset.rm) { const [peer, slot, dmr] = b.dataset.rm.split(',').map(Number); post('/api/subs', { peer, slot, dmr, on: false }); return; }
+  if (b && b.dataset.dyn) { const [peer, slot] = b.dataset.dyn.split(',').map(Number); post('/api/dynamic', { peer, slot }); return; }
+  if (b && b.dataset.edit) { const id = Number(b.dataset.edit); editing = editing === id ? null : id; draw(); return; }
+  if (b && b.dataset.gdel) { const g = groupOf(Number(b.dataset.gdel)); if (g && confirm('Remove group ' + g.name + '?')) { if (editing === g.id) editing = null; post('/api/groups/delete', { id: g.id }); } return; }
+  if (b && b.dataset.member) { const [system, tg, on] = b.dataset.member.split(','); if (!groupOf(editing)) return;
+    post('/api/groups/member', { id: editing, system, tg: Number(tg), on: on === '1' }).then(err => { $('gErr').textContent = err || ''; }); return; }
+  if (b && b.id === 'gMake') { const id = Number($('gId').value || $('gId').dataset.next), name = $('gName').value.trim() || ('Group ' + id);
+    post('/api/groups', { id, name, keepIds: $('gKeep').checked }).then(err => { $('gErr').textContent = err || '';
+      if (!err) { $('gName').value = ''; $('gId').value = ''; editing = id; draw(); } }); return; }
+  if (b && b.dataset.sysave !== undefined) { const sys = b.dataset.sysave;
+    const relay = document.querySelector(`input[data-relay="${CSS.escape(sys)}"]`), base = document.querySelector(`input[data-base="${CSS.escape(sys)}"]`);
+    const v = base.value.replace(/\D/g, '');
+    post('/api/systems', { system: sys, skip: !relay.checked, tgBase: v ? Number(v) : null }).then(err => { $('sErr').textContent = err || 'Saved: the relay is restarting.'; if (!err) { sysDirty = false; } }); return; }
+  if (b && b.dataset.sub) { const [slot, dmr, on] = b.dataset.sub.split(',').map(Number); post('/api/subs', { peer: sel, slot, dmr, on: !!on }); return; }
+  const card = e.target.closest('.peer');
+  if (card) { sel = Number(card.dataset.peer); try { localStorage.setItem('peer', sel); } catch (e) {} draw(); }
+});
+['q', 'playable', 'mine'].forEach(id => $(id).addEventListener('input', () => S && drawTgs()));
+$('systems').addEventListener('input', () => { sysDirty = true; });
+$('prefix').addEventListener('input', () => { try { localStorage.setItem('prefix', $('prefix').value); } catch (e) {} S && draw(); });
+
+async function poll() {
+  try { const r = await fetch('/api/state'); if (r.ok) { S = await r.json(); draw(); } } catch (e) {}
+  setTimeout(poll, 1000);
+}
+poll();
+</script>
+</body>
+</html>
